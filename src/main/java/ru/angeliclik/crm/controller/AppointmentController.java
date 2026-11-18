@@ -5,9 +5,11 @@ import ru.angeliclik.crm.model.Appointment;
 import ru.angeliclik.crm.service.AppointmentService;
 
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import java.util.List;
 
 @RestController
+@PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
 @RequestMapping("/api/appointments")
 @CrossOrigin
 public class AppointmentController {

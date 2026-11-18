@@ -1,1 +1,103 @@
 /* Стили компонентов BeautyCRM будут добавляться отдельно */
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg, #f4f0ed);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 36px;
+  border-radius: 22px;
+  background: var(--card, #fff);
+  box-shadow: 0 12px 45px rgba(0,0,0,.07);
+}
+
+.auth-logo {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  border-radius: 16px;
+  background: #eee3df;
+  color: #9b716b;
+}
+
+.auth-card h1 {
+  margin: 0;
+  text-align: center;
+  font-size: 25px;
+}
+
+.auth-subtitle {
+  margin: 8px 0 24px;
+  text-align: center;
+  color: #999;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.auth-tabs button {
+  flex: 1;
+  padding: 11px;
+  border: 0;
+  border-radius: 10px;
+  background: #f2eeec;
+  cursor: pointer;
+}
+
+.auth-tabs button.selected {
+  background: #9b716b;
+  color: white;
+}
+
+.auth-card label {
+  display: block;
+  margin: 14px 0 7px;
+  font-size: 13px;
+}
+
+.auth-card input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 13px;
+  border: 1px solid #e5dedb;
+  border-radius: 10px;
+  outline-color: #9b716b;
+  background: transparent;
+  color: inherit;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 22px;
+  padding: 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #9b716b;
+  color: white;
+  cursor: pointer;
+}
+
+.auth-submit:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.auth-error, .auth-message {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
+.auth-error { color: #c04444; }
+.auth-message { color: #39845b; }
+.header-user { font-size: 13px; }

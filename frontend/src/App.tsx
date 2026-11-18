@@ -6,7 +6,7 @@ import {
   Sparkles, BriefcaseBusiness, ChartNoAxesCombined, Settings,
   Sun, Moon, Search, Pencil, Trash2
 } from 'lucide-react'
-import { getClients, createClient, updateClient, deleteClient, uploadClientPhoto, getMasters, createMaster, updateMaster, deleteMaster } from './services/api'
+import { getClients, createClient, updateClient, deleteClient, uploadClientPhoto, getMasters, createMaster, updateMaster, deleteMaster, login, register, verifyEmail, logout, getCurrentUser } from './services/api'
 import './App.css'
 
 interface Client {
@@ -89,7 +89,92 @@ async function getCroppedImage(imageSrc: string, pixelCrop: Area): Promise<Blob>
     )
   })
 }
+type FormErrors = {
+  fullName?: string
+  phone?: string
+  email?: string
+  specialization?: string
+  notes?: string
+}
+
+function validateForm(
+  form: { fullName: string; phone: string; email: string },
+  phoneRequired: boolean
+): FormErrors {
+  const errors: FormErrors = {}
+  const name = form.fullName.trim()
+  const phone = form.phone.trim()
+  const email = form.email.trim()
+
+  if (!name) {
+    errors.fullName = 'Укажи имя'
+  } else if (name.length < 2 || name.length > 60) {
+    errors.fullName = 'Имя должно содержать от 2 до 60 символов'
+  } else if (!/^[\p{L}\s.'’-]+$/u.test(name)) {
+    errors.fullName = 'Используй только буквы, пробелы и дефис'
+  }
+
+  if (!phone && phoneRequired) {
+    errors.phone = 'Укажи телефон'
+  } else if (phone) {
+    const digits = phone.replace(/\D/g, '')
+    const validLength = digits.length === 10 ||
+      (digits.length === 11 && /^[78]/.test(digits))
+
+    if (!/^[+\d()\s-]+$/.test(phone) || !validLength) {
+      errors.phone = 'Введи корректный российский номер'
+    }
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    errors.email = 'Проверь формат почты'
+  }
+
+  return errors
+}
 function App() {
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser())
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
+  const [authForm, setAuthForm] = useState({ fullName: '', phone: '', email: '', password: '' })
+  const [authError, setAuthError] = useState('')
+  const [authMessage, setAuthMessage] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('token')
+
+    if (window.location.pathname === '/verify-email' && token) {
+      verifyEmail(token)
+        .then(setAuthMessage)
+        .catch((error) => setAuthError(error.message))
+        .finally(() => window.history.replaceState({}, '', '/'))
+    }
+  }, [])
+
+  const handleAuth = async () => {
+    setAuthError('')
+    setAuthMessage('')
+    setAuthLoading(true)
+
+    try {
+      if (authMode === 'register') {
+        const message = await register(authForm)
+        setAuthMessage(message)
+        setAuthMode('login')
+      } else {
+        const user = await login({
+          email: authForm.email,
+          password: authForm.password,
+        })
+        setCurrentUser(user)
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Ошибка авторизации')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
   const [activePage, setActivePage] = useState(() => localStorage.getItem('activePage') || 'dashboard')
   const [dark, setDark] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
@@ -100,6 +185,14 @@ function App() {
   const [editingClientId, setEditingClientId] = useState<number | null>(null)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [clientForm, setClientForm] = useState({ fullName: '', phone: '', email: '', notes: '' })
+  const [masters, setMasters] = useState<Master[]>([])
+  const [mastersLoading, setMastersLoading] = useState(false)
+  const [masterError, setMasterError] = useState('')
+  const [showMasterModal, setShowMasterModal] = useState(false)
+  const [editingMasterId, setEditingMasterId] = useState<number | null>(null)
+  const [masterForm, setMasterForm] = useState({ fullName: '', specialization: '', phone: '', email: '' })
+  const [clientFieldErrors, setClientFieldErrors] = useState<FormErrors>({})
+  const [masterFieldErrors, setMasterFieldErrors] = useState<FormErrors>({})
   const [savingClient, setSavingClient] = useState(false)
   const [clientError, setClientError] = useState('')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
@@ -109,11 +202,26 @@ function App() {
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
 
   useEffect(() => {
+    if (!currentUser || !['OWNER', 'ADMIN'].includes(currentUser.role)) {
+      setLoading(false)
+      return
+    }
+
     getClients()
       .then((data) => setClients(data.filter((client: Client) => !client.deleted)))
       .catch(() => setError('Не удалось загрузить клиентов'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser || !['OWNER', 'ADMIN'].includes(currentUser.role)) return
+
+    setMastersLoading(true)
+    getMasters()
+      .then((data) => setMasters(data.filter((master: Master) => !master.deleted)))
+      .catch(() => setMasterError('Не удалось загрузить мастеров'))
+      .finally(() => setMastersLoading(false))
+  }, [currentUser])
 
   useEffect(() => {
     document.body.classList.toggle('dark', dark)
@@ -121,10 +229,14 @@ function App() {
   }, [dark])
 
   const handleSaveClient = async () => {
-    if (!clientForm.fullName.trim() || !clientForm.phone.trim()) {
-      setClientError('Заполни имя и телефон')
-      return
+    const validationErrors = validateForm(clientForm, true)
+
+    if (clientForm.notes.trim().length > 1000) {
+      validationErrors.notes = 'Не более 1000 символов'
     }
+
+    setClientFieldErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) return
 
     setSavingClient(true)
     setClientError('')
@@ -148,12 +260,73 @@ function App() {
       }
 
       setClientForm({ fullName: '', phone: '', email: '', notes: '' })
+      setClientFieldErrors({})
       setEditingClientId(null)
       setShowClientModal(false)
     } catch {
       setClientError('Не удалось сохранить клиента. Попробуй ещё раз.')
     } finally {
       setSavingClient(false)
+    }
+  }
+  const handleEditMaster = (master: Master) => {
+    setEditingMasterId(master.id)
+    setMasterForm({
+      fullName: master.fullName,
+      specialization: master.specialization || '',
+      phone: master.phone || '',
+      email: master.email || '',
+    })
+    setMasterError('')
+    setShowMasterModal(true)
+  }
+
+  const handleDeleteMaster = async (id: number) => {
+    if (!window.confirm('Удалить мастера?')) return
+
+    try {
+      await deleteMaster(id)
+      setMasters((prev) => prev.filter((master) => master.id !== id))
+    } catch {
+      setMasterError('Не удалось удалить мастера')
+    }
+  }
+  const handleSaveMaster = async () => {
+    const validationErrors = validateForm(masterForm, false)
+
+    if (masterForm.specialization.trim().length > 100) {
+      validationErrors.specialization = 'Не более 100 символов'
+    }
+
+    setMasterFieldErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) return
+
+    setMasterError('')
+
+    const data = {
+      fullName: masterForm.fullName.trim(),
+      specialization: masterForm.specialization.trim(),
+      phone: masterForm.phone.trim(),
+      email: masterForm.email.trim(),
+    }
+
+    try {
+      if (editingMasterId !== null) {
+        const updatedMaster = await updateMaster(editingMasterId, data)
+        setMasters((prev) => prev.map((master) =>
+          master.id === editingMasterId ? updatedMaster : master
+        ))
+      } else {
+        const newMaster = await createMaster(data)
+        setMasters((prev) => [...prev, newMaster])
+      }
+
+      setMasterForm({ fullName: '', specialization: '', phone: '', email: '' })
+      setMasterFieldErrors({})
+      setEditingMasterId(null)
+      setShowMasterModal(false)
+    } catch {
+      setMasterError('Не удалось сохранить мастера')
     }
   }
   const handleSaveCroppedPhoto = async () => {
@@ -190,6 +363,57 @@ function App() {
     )
   })
 
+  if (!currentUser) {
+    return (
+      <div className="auth-screen">
+        <form className="auth-card" onSubmit={(event) => { event.preventDefault(); handleAuth() }}>
+          <div className="auth-logo"><Sparkles size={24} /></div>
+          <h1>Ангельский лик</h1>
+          <p className="auth-subtitle">Beauty CRM</p>
+
+          <div className="auth-tabs">
+            <button type="button" className={authMode === 'login' ? 'selected' : ''} onClick={() => { setAuthMode('login'); setAuthError(''); setAuthMessage('') }}>Вход</button>
+            <button type="button" className={authMode === 'register' ? 'selected' : ''} onClick={() => { setAuthMode('register'); setAuthError(''); setAuthMessage('') }}>Регистрация</button>
+          </div>
+
+          {authMode === 'register' && (
+            <>
+              <label>Ваше имя</label>
+              <input required value={authForm.fullName} onChange={(e) => setAuthForm({ ...authForm, fullName: e.target.value })} placeholder="Имя и фамилия" />
+              <label>Телефон</label>
+              <input required value={authForm.phone} onChange={(e) => setAuthForm({ ...authForm, phone: e.target.value })} placeholder="+7..." />
+            </>
+          )}
+
+          <label>Email</label>
+          <input required type="email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} placeholder="example@mail.com" />
+
+          <label>Пароль</label>
+          <input required type="password" minLength={8} maxLength={72} value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} placeholder="Минимум 8 символов" />
+
+          {authError && <p className="auth-error">{authError}</p>}
+          {authMessage && <p className="auth-message">{authMessage}</p>}
+
+          <button className="auth-submit" type="submit" disabled={authLoading}>
+            {authLoading ? 'Подождите...' : authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  if (!['OWNER', 'ADMIN'].includes(currentUser.role)) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="auth-logo"><Sparkles size={24} /></div>
+          <h1>Здравствуйте, {currentUser.fullName}!</h1>
+          <p className="auth-subtitle">Личный кабинет для вашей роли пока находится в разработке.</p>
+          <button className="auth-submit" onClick={() => { logout(); setCurrentUser(null) }}>Выйти</button>
+        </div>
+      </div>
+    )
+  }
   return (
     <>
       <header className="header">
@@ -203,7 +427,7 @@ function App() {
             {dark ? <Sun size={16} /> : <Moon size={16} />}
             <span>{dark ? 'Светлая тема' : 'Тёмная тема'}</span>
           </button>
-          <div className="user-avatar">Л</div>
+          <span className="header-user">{currentUser.fullName}</span><button className="icon-btn" onClick={() => { logout(); setCurrentUser(null) }}>Выйти</button>
         </div>
       </header>
 
@@ -380,7 +604,85 @@ function App() {
               </>
             )}
 
-            {!['dashboard', 'clients'].includes(activePage) && (
+            {activePage === 'masters' && (
+              <>
+                <p className="page-subtitle">
+                  Список сотрудников косметологического центра
+                </p>
+
+                <div style={{ marginBottom: 16 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setMasterForm({ fullName: '', specialization: '', phone: '', email: '' })
+                      setEditingMasterId(null)
+                      setMasterError('')
+                      setShowMasterModal(true)
+                    }}
+                  >
+                    <Users size={16} />
+                    Добавить мастера
+                  </button>
+                </div>
+
+                {masterError && <p style={{ color: '#B54545' }}>{masterError}</p>}
+
+                {mastersLoading ? (
+                  <p>Загружаем мастеров...</p>
+                ) : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Имя мастера</th>
+                          <th>Специализация</th>
+                          <th>Телефон</th>
+                          <th>Email</th>
+                          <th>Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {masters.map((master) => (
+                          <tr key={master.id}>
+                            <td>{master.fullName}</td>
+                            <td>{master.specialization || 'Не указана'}</td>
+                            <td>{master.phone || 'Не указан'}</td>
+                            <td>{master.email || 'Не указан'}</td>
+                            <td>
+                              <button
+                                className="btn btn-outline"
+                                title="Редактировать"
+                                onClick={() => handleEditMaster(master)}
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                className="btn btn-outline"
+                                title="Удалить"
+                                onClick={() => handleDeleteMaster(master.id)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {masters.length === 0 && (
+                          <tr>
+                            <td colSpan={5}>Мастеров пока нет</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <p className="page-subtitle" style={{ marginTop: 16 }}>
+                  Всего мастеров: {masters.length}
+                </p>
+              </>
+            )}
+
+            {!['dashboard', 'clients', 'masters'].includes(activePage) && (
               <p className="page-subtitle">
                 Раздел «{titles[activePage]}». Работа над ним ещё впереди.
               </p>
@@ -559,6 +861,82 @@ function App() {
           </div>
         </div>
       )}
+      {showMasterModal && (
+        <div
+          className="modal-overlay active"
+          onClick={() => setShowMasterModal(false)}
+        >
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2 className="modal-title">
+              {editingMasterId !== null ? 'Редактировать мастера' : 'Новый мастер'}
+            </h2>
+
+            <div className="form-group">
+              <label className="form-label">Имя мастера *</label>
+              <input
+                className="form-input"
+                placeholder="Например, Анна Иванова"
+                value={masterForm.fullName}
+                onChange={(event) => setMasterForm({ ...masterForm, fullName: event.target.value })}
+              />
+                { masterFieldErrors.fullName && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{masterFieldErrors.fullName}</p> }
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Специализация</label>
+              <input
+                className="form-input"
+                placeholder="Например, косметолог"
+                value={masterForm.specialization}
+                onChange={(event) => setMasterForm({ ...masterForm, specialization: event.target.value })}
+              />
+                { masterFieldErrors.specialization && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{masterFieldErrors.specialization}</p> }
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Телефон</label>
+              <input
+                className="form-input"
+                placeholder="+7 (___) ___-__-__"
+                value={masterForm.phone}
+                onChange={(event) => setMasterForm({ ...masterForm, phone: event.target.value })}
+              />
+                { masterFieldErrors.phone && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{masterFieldErrors.phone}</p> }
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input
+                className="form-input"
+                type="email"
+                placeholder="example@mail.ru"
+                value={masterForm.email}
+                onChange={(event) => setMasterForm({ ...masterForm, email: event.target.value })}
+              />
+                { masterFieldErrors.email && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{masterFieldErrors.email}</p> }
+            </div>
+
+            {masterError && (
+              <p style={{ color: '#B54545', fontSize: 13 }}>{masterError}</p>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-outline"
+                onClick={() => setShowMasterModal(false)}
+              >
+                Отмена
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveMaster}
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showClientModal && (
         <div
           className="modal-overlay active"
@@ -575,6 +953,7 @@ function App() {
                 value={clientForm.fullName}
                 onChange={(event) => setClientForm({ ...clientForm, fullName: event.target.value })}
               />
+                { clientFieldErrors.fullName && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{clientFieldErrors.fullName}</p> }
             </div>
 
             <div className="form-group">
@@ -585,6 +964,7 @@ function App() {
                 value={clientForm.phone}
                 onChange={(event) => setClientForm({ ...clientForm, phone: event.target.value })}
               />
+                { clientFieldErrors.phone && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{clientFieldErrors.phone}</p> }
             </div>
 
             <div className="form-group">
@@ -596,6 +976,7 @@ function App() {
                 value={clientForm.email}
                 onChange={(event) => setClientForm({ ...clientForm, email: event.target.value })}
               />
+                { clientFieldErrors.email && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{clientFieldErrors.email}</p> }
             </div>
 
             <div className="form-group">
@@ -607,6 +988,7 @@ function App() {
                 value={clientForm.notes}
                 onChange={(event) => setClientForm({ ...clientForm, notes: event.target.value })}
               />
+                { clientFieldErrors.notes && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{clientFieldErrors.notes}</p> }
             </div>
 
             {clientError && (

@@ -3,9 +3,11 @@ package ru.angeliclik.crm.controller;
 import ru.angeliclik.crm.model.Master;
 import ru.angeliclik.crm.service.MasterService;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import java.util.List;
 
 @RestController
+@PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
 @RequestMapping("/api/masters")
 @CrossOrigin
 public class MasterController {

@@ -5,12 +5,14 @@ import ru.angeliclik.crm.service.ClientService;
 import ru.angeliclik.crm.service.FileStorageService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
 
 @RestController
+@PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
 @RequestMapping("/api/clients")
 @CrossOrigin
 public class ClientController {

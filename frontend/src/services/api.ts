@@ -1,8 +1,86 @@
 const API_URL = '/api'
 
+export interface AuthResponse {
+  token: string
+  id: number
+  fullName: string
+  email: string
+  role: 'OWNER' | 'ADMIN' | 'MASTER' | 'CLIENT'
+}
+
+async function apiFetch(url: string, options: RequestInit = {}) {
+  const token = sessionStorage.getItem('authToken')
+
+  const headers = new Headers(options.headers)
+
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  if (options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const response = await fetch(url, { ...options, headers })
+
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || 'Ошибка запроса')
+  }
+
+  return response
+}
+
+export async function register(data: {
+  fullName: string
+  email: string
+  phone: string
+  password: string
+}) {
+  const response = await apiFetch(`${API_URL}/auth/register`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  return response.text()
+}
+
+export async function login(data: { email: string; password: string }) {
+  const response = await apiFetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+  const result: AuthResponse = await response.json()
+  sessionStorage.setItem('authToken', result.token)
+  sessionStorage.setItem('authUser', JSON.stringify({
+    id: result.id,
+    fullName: result.fullName,
+    email: result.email,
+    role: result.role,
+  }))
+
+  return result
+}
+
+export async function verifyEmail(token: string) {
+  const response = await apiFetch(
+    `${API_URL}/auth/verify-email?token=${encodeURIComponent(token)}`
+  )
+  return response.text()
+}
+
+export function logout() {
+  sessionStorage.removeItem('authToken')
+  sessionStorage.removeItem('authUser')
+}
+
+export function getCurrentUser() {
+  const user = sessionStorage.getItem('authUser')
+  return user ? JSON.parse(user) : null
+}
+
 export async function getClients() {
-  const response = await fetch(`${API_URL}/clients`)
-  if (!response.ok) throw new Error('Не удалось загрузить клиентов')
+  const response = await apiFetch(`${API_URL}/clients`)
   return response.json()
 }
 
@@ -12,12 +90,10 @@ export async function createClient(client: {
   email: string
   notes: string
 }) {
-  const response = await fetch(`${API_URL}/clients`, {
+  const response = await apiFetch(`${API_URL}/clients`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(client),
   })
-  if (!response.ok) throw new Error('Не удалось создать клиента')
   return response.json()
 }
 
@@ -27,46 +103,36 @@ export async function updateClient(id: number, client: {
   email: string
   notes: string
 }) {
-  const response = await fetch(`${API_URL}/clients/${id}`, {
+  const response = await apiFetch(`${API_URL}/clients/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(client),
   })
-  if (!response.ok) throw new Error('Не удалось обновить клиента')
   return response.json()
 }
 
 export async function deleteClient(id: number) {
-  const response = await fetch(`${API_URL}/clients/${id}`, {
-    method: 'DELETE',
-  })
-  if (!response.ok) throw new Error('Не удалось удалить клиента')
+  await apiFetch(`${API_URL}/clients/${id}`, { method: 'DELETE' })
 }
 
 export async function getAppointments() {
-  const response = await fetch(`${API_URL}/appointments`)
-  if (!response.ok) throw new Error('Не удалось загрузить записи')
+  const response = await apiFetch(`${API_URL}/appointments`)
   return response.json()
 }
+
 export async function uploadClientPhoto(id: number, file: File) {
   const formData = new FormData()
   formData.append('file', file)
 
-  const response = await fetch(`${API_URL}/clients/${id}/photo`, {
+  const response = await apiFetch(`${API_URL}/clients/${id}/photo`, {
     method: 'POST',
     body: formData,
   })
-
-  if (!response.ok) {
-    throw new Error('Не удалось загрузить фотографию')
-  }
 
   return response.json()
 }
 
 export async function getMasters() {
-  const response = await fetch(`${API_URL}/masters`)
-  if (!response.ok) throw new Error('Не удалось загрузить мастеров')
+  const response = await apiFetch(`${API_URL}/masters`)
   return response.json()
 }
 
@@ -76,12 +142,10 @@ export async function createMaster(master: {
   phone: string
   email: string
 }) {
-  const response = await fetch(`${API_URL}/masters`, {
+  const response = await apiFetch(`${API_URL}/masters`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(master),
   })
-  if (!response.ok) throw new Error('Не удалось добавить мастера')
   return response.json()
 }
 
@@ -91,18 +155,13 @@ export async function updateMaster(id: number, master: {
   phone: string
   email: string
 }) {
-  const response = await fetch(`${API_URL}/masters/${id}`, {
+  const response = await apiFetch(`${API_URL}/masters/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(master),
   })
-  if (!response.ok) throw new Error('Не удалось обновить мастера')
   return response.json()
 }
 
 export async function deleteMaster(id: number) {
-  const response = await fetch(`${API_URL}/masters/${id}`, {
-    method: 'DELETE',
-  })
-  if (!response.ok) throw new Error('Не удалось удалить мастера')
+  await apiFetch(`${API_URL}/masters/${id}`, { method: 'DELETE' })
 }
