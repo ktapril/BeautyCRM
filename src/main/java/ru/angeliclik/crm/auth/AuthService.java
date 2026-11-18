@@ -88,6 +88,10 @@ public class AuthService {
             throw new IllegalArgumentException("Сначала подтвердите email");
         }
 
+        if (!user.isEnabled()) {
+            throw new IllegalArgumentException("Доступ к аккаунту заблокирован");
+        }
+
         String token = jwtService.generateToken(user);
 
         return new AuthResponse(

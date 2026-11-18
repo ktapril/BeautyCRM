@@ -165,3 +165,51 @@ export async function updateMaster(id: number, master: {
 export async function deleteMaster(id: number) {
   await apiFetch(`${API_URL}/masters/${id}`, { method: 'DELETE' })
 }
+export interface Staff {
+  id: number
+  fullName: string
+  email: string
+  phone: string
+  role: 'ADMIN' | 'MASTER'
+  enabled: boolean
+  masterId: number | null
+  createdAt: string
+}
+
+export interface StaffRequest {
+  fullName?: string
+  email?: string
+  phone?: string
+  password?: string
+  role: 'ADMIN' | 'MASTER'
+  masterId: number | null
+}
+
+export async function getStaff(): Promise<Staff[]> {
+  const response = await apiFetch(`${API_URL}/staff`)
+  return response.json()
+}
+
+export async function createStaff(staff: StaffRequest): Promise<Staff> {
+  const response = await apiFetch(`${API_URL}/staff`, {
+    method: 'POST',
+    body: JSON.stringify(staff),
+  })
+  return response.json()
+}
+
+export async function updateStaff(id: number, staff: StaffRequest): Promise<Staff> {
+  const response = await apiFetch(`${API_URL}/staff/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(staff),
+  })
+  return response.json()
+}
+
+export async function setStaffEnabled(id: number, enabled: boolean): Promise<Staff> {
+  const response = await apiFetch(
+    `${API_URL}/staff/${id}/status?enabled=${enabled}`,
+    { method: 'PATCH' }
+  )
+  return response.json()
+}

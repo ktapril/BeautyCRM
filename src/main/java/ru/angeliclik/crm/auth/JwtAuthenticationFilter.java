@@ -44,6 +44,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
                     userRepository.findByEmailIgnoreCase(email)
                         .filter(User::isEmailVerified)
+                        .filter(User::isEnabled)
                         .ifPresent(user -> {
                             var authorities = List.of(
                                 new SimpleGrantedAuthority("ROLE_" + user.getRole().name())

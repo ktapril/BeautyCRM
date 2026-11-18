@@ -1,5 +1,6 @@
 package ru.angeliclik.crm.auth;
 
+import ru.angeliclik.crm.model.Master;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -31,6 +32,13 @@ public class User {
     private boolean emailVerified = false;
 
     @Column(nullable = false)
+    private boolean enabled = true;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "master_id", unique = true)
+    private Master master;
+
+    @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
     public User() {}
@@ -42,6 +50,8 @@ public class User {
     public String getPassword() { return password; }
     public Role getRole() { return role; }
     public boolean isEmailVerified() { return emailVerified; }
+    public boolean isEnabled() { return enabled; }
+    public Master getMaster() { return master; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 
     public void setFullName(String fullName) { this.fullName = fullName; }
@@ -50,4 +60,6 @@ public class User {
     public void setPassword(String password) { this.password = password; }
     public void setRole(Role role) { this.role = role; }
     public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public void setMaster(Master master) { this.master = master; }
 }

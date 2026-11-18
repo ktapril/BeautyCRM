@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { getStaff, createStaff, updateStaff, setStaffEnabled } from './services/api'
+import type { Staff, StaffRequest } from './services/api'
 import Cropper from 'react-easy-crop'
 import type { Area, Point } from 'react-easy-crop'
 import {
@@ -34,6 +36,7 @@ const menu = [
   { id: 'schedule', label: 'Записи', icon: ClipboardList },
   { id: 'clients', label: 'Клиенты', icon: Users },
   { id: 'masters', label: 'Мастера', icon: BriefcaseBusiness },
+  { id: 'staff', label: 'Сотрудники', icon: Users },
   { id: 'services', label: 'Услуги', icon: Sparkles },
   { id: 'stats', label: 'Статистика', icon: ChartNoAxesCombined },
   { id: 'settings', label: 'Настройки', icon: Settings },
@@ -45,11 +48,33 @@ const titles: Record<string, string> = {
   schedule: 'Все записи',
   clients: 'Клиенты',
   masters: 'Мастера',
+  staff: 'Сотрудники',
   services: 'Услуги',
   stats: 'Статистика',
   settings: 'Настройки',
 }
 
+function formatRussianPhone(value: string): string {
+  const raw = value.trim()
+  let digits = raw.replace(/\D/g, '')
+
+  if (raw.startsWith('+7') || (digits.length === 11 && /^[78]/.test(digits))) {
+    digits = digits.slice(1)
+  }
+
+  digits = digits.slice(0, 10)
+
+  if (!digits) return ''
+
+  let formatted = '+7 (' + digits.slice(0, 3)
+
+  if (digits.length >= 3) formatted += ')'
+  if (digits.length > 3) formatted += ' ' + digits.slice(3, 6)
+  if (digits.length > 6) formatted += '-' + digits.slice(6, 8)
+  if (digits.length > 8) formatted += '-' + digits.slice(8, 10)
+
+  return formatted
+}
 async function getCroppedImage(imageSrc: string, pixelCrop: Area): Promise<Blob> {
   const image = new Image()
   image.src = imageSrc
@@ -186,6 +211,19 @@ function App() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [clientForm, setClientForm] = useState({ fullName: '', phone: '', email: '', notes: '' })
   const [masters, setMasters] = useState<Master[]>([])
+  const [staff, setStaff] = useState<Staff[]>([])
+  const [staffLoading, setStaffLoading] = useState(false)
+  const [staffError, setStaffError] = useState('')
+  const [showStaffModal, setShowStaffModal] = useState(false)
+  const [editingStaffId, setEditingStaffId] = useState<number | null>(null)
+  const [staffForm, setStaffForm] = useState<StaffRequest>({
+    fullName: '',
+    email: '',
+    phone: '+7',
+    password: '',
+    role: 'MASTER',
+    masterId: null,
+  })
   const [mastersLoading, setMastersLoading] = useState(false)
   const [masterError, setMasterError] = useState('')
   const [showMasterModal, setShowMasterModal] = useState(false)
@@ -223,6 +261,16 @@ function App() {
       .finally(() => setMastersLoading(false))
   }, [currentUser])
 
+  useEffect(() => {
+    if (currentUser?.role !== 'OWNER') return
+
+    setStaffLoading(true)
+    setStaffError('')
+    getStaff()
+      .then((data) => setStaff(data))
+      .catch(() => setStaffError('Не удалось загрузить сотрудников'))
+      .finally(() => setStaffLoading(false))
+  }, [currentUser])
   useEffect(() => {
     document.body.classList.toggle('dark', dark)
     return () => document.body.classList.remove('dark')
@@ -316,6 +364,8 @@ function App() {
         setMasters((prev) => prev.map((master) =>
           master.id === editingMasterId ? updatedMaster : master
         ))
+        const updatedStaff = await getStaff()
+        setStaff(updatedStaff)
       } else {
         const newMaster = await createMaster(data)
         setMasters((prev) => [...prev, newMaster])
@@ -327,6 +377,139 @@ function App() {
       setShowMasterModal(false)
     } catch {
       setMasterError('Не удалось сохранить мастера')
+    }
+  }
+  const handleEditStaff = (member: Staff) => {
+    setEditingStaffId(member.id)
+    setStaffForm({
+      fullName: member.fullName,
+      email: member.email,
+      phone: formatRussianPhone(member.phone || '+7'),
+      password: '',
+      role: member.role,
+      masterId: member.masterId,
+    })
+    setStaffError('')
+    setShowStaffModal(true)
+  }
+
+  const handleSaveStaff = async () => {
+    const isMaster = staffForm.role === 'MASTER'
+    const fullName = (staffForm.fullName || '').trim()
+    const email = (staffForm.email || '').trim()
+    const phone = (staffForm.phone || '').trim()
+    const password = staffForm.password || ''
+
+    if (isMaster && staffForm.masterId === null) {
+      setStaffError('Выберите карточку мастера')
+      return
+    }
+
+    if (!isMaster) {
+      if (!fullName || !email || !phone) {
+        setStaffError('Заполните ФИО, email и телефон')
+        return
+      }
+
+      if (fullName.length > 100) {
+        setStaffError('ФИО не должно превышать 100 символов')
+        return
+      }
+
+      const emailParts = email.split('@')
+      const emailValid =
+        email.length <= 150 &&
+        emailParts.length === 2 &&
+        emailParts[0].length > 0 &&
+        emailParts[0].length <= 64 &&
+        emailParts[1].length > 0 &&
+        !email.includes('..') &&
+        /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(emailParts[0]) &&
+        emailParts[1].split('.').every((label) =>
+          label.length > 0 &&
+          label.length <= 63 &&
+          /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(label)
+        ) &&
+        /\.[A-Za-z]{2,}$/.test(emailParts[1])
+
+      if (!emailValid) {
+        setStaffError('Введите корректный email, например name@example.com')
+        return
+      }
+
+      const phoneDigits = phone.replace(/\D/g, '')
+      if (phoneDigits.length !== 11 || !phoneDigits.startsWith('7')) {
+        setStaffError('Введите полный номер телефона в формате +7 (999) 123-45-67')
+        return
+      }
+    }
+
+    if (editingStaffId === null && password.length < 12) {
+      setStaffError('Пароль должен содержать не менее 12 символов')
+      return
+    }
+
+    if (password && password.length < 12) {
+      setStaffError('Пароль должен содержать не менее 12 символов')
+      return
+    }
+
+    const data: StaffRequest = {
+      role: staffForm.role,
+      masterId: isMaster ? staffForm.masterId : null,
+    }
+
+    if (!isMaster) {
+      data.fullName = fullName
+      data.email = email
+      data.phone = phone
+    }
+
+    if (password) {
+      data.password = password
+    }
+
+    setStaffError('')
+
+    try {
+      if (editingStaffId !== null) {
+        const updated = await updateStaff(editingStaffId, data)
+        setStaff((prev) =>
+          prev.map((member) => member.id === updated.id ? updated : member)
+        )
+      } else {
+        const created = await createStaff(data)
+        setStaff((prev) => [...prev, created])
+      }
+
+      setStaffForm({
+        fullName: '',
+        email: '',
+        phone: '+7',
+        password: '',
+        role: 'MASTER',
+        masterId: null,
+      })
+      setEditingStaffId(null)
+      setShowStaffModal(false)
+    } catch (error) {
+      setStaffError(
+        error instanceof Error ? error.message : 'Не удалось сохранить сотрудника'
+      )
+    }
+  }
+  const handleToggleStaffEnabled = async (id: number, enabled: boolean) => {
+    setStaffError('')
+
+    try {
+      const updated = await setStaffEnabled(id, !enabled)
+      setStaff((prev) =>
+        prev.map((member) => member.id === updated.id ? updated : member)
+      )
+    } catch (error) {
+      setStaffError(
+        error instanceof Error ? error.message : 'Не удалось изменить доступ'
+      )
     }
   }
   const handleSaveCroppedPhoto = async () => {
@@ -433,7 +616,7 @@ function App() {
 
       <div className="container">
         <aside className="sidebar">
-          {menu.map(({ id, label, icon: Icon }) => (
+          {menu.filter(({ id }) => id !== 'staff' || currentUser?.role === 'OWNER').map(({ id, label, icon: Icon }) => (
             <div
               key={id}
               className={`menu-item ${activePage === id ? 'active' : ''}`}
@@ -682,7 +865,99 @@ function App() {
               </>
             )}
 
-            {!['dashboard', 'clients', 'masters'].includes(activePage) && (
+            {activePage === 'staff' && currentUser?.role === 'OWNER' && (
+              <>
+                <p className="page-subtitle">
+                  Управление аккаунтами администраторов и мастеров
+                </p>
+
+                <div style={{ marginBottom: 16 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setStaffForm({
+                        fullName: '',
+                        email: '',
+                        phone: '+7',
+                        password: '',
+                        role: 'MASTER',
+                        masterId: null,
+                      })
+                      setEditingStaffId(null)
+                      setStaffError('')
+                      setShowStaffModal(true)
+                    }}
+                  >
+                    <Users size={16} />
+                    Добавить сотрудника
+                  </button>
+                </div>
+
+                {staffError && <p style={{ color: '#B54545' }}>{staffError}</p>}
+
+                {staffLoading ? (
+                  <p>Загружаем сотрудников...</p>
+                ) : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Имя</th>
+                          <th>Email</th>
+                          <th>Телефон</th>
+                          <th>Роль</th>
+                          <th>Карточка мастера</th>
+                          <th>Статус</th>
+                          <th>Действия</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {staff.map((member) => (
+                          <tr key={member.id}>
+                            <td>{member.fullName}</td>
+                            <td>{member.email}</td>
+                            <td>{member.phone || 'Не указан'}</td>
+                            <td>{member.role === 'ADMIN' ? 'Администратор' : 'Мастер'}</td>
+                            <td>
+                              {member.masterId
+                                ? masters.find((master) => master.id === member.masterId)?.fullName || 'Карточка не найдена'
+                                : 'Не привязана'}
+                            </td>
+                            <td>{member.enabled ? 'Активен' : 'Отключён'}</td>
+                            <td>
+                              <button
+                                className="btn btn-outline"
+                                title="Редактировать"
+                                onClick={() => handleEditStaff(member)}
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                className="btn btn-outline"
+                                title={member.enabled ? 'Отключить' : 'Включить'}
+                                onClick={() => handleToggleStaffEnabled(member.id, member.enabled)}
+                              >
+                                {member.enabled ? 'Отключить' : 'Включить'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {staff.length === 0 && (
+                          <tr>
+                            <td colSpan={7}>Сотрудников пока нет</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <p className="page-subtitle" style={{ marginTop: 16 }}>
+                  Всего сотрудников: {staff.length}
+                </p>
+              </>
+            )}
+            {!['dashboard', 'clients', 'masters', 'staff'].includes(activePage) && (
               <p className="page-subtitle">
                 Раздел «{titles[activePage]}». Работа над ним ещё впереди.
               </p>
@@ -897,9 +1172,9 @@ function App() {
               <label className="form-label">Телефон</label>
               <input
                 className="form-input"
-                placeholder="+7 (___) ___-__-__"
+                placeholder="+7 (999) 123-45-67"
                 value={masterForm.phone}
-                onChange={(event) => setMasterForm({ ...masterForm, phone: event.target.value })}
+                onChange={(event) => setMasterForm({ ...masterForm, phone: formatRussianPhone(event.target.value) })}
               />
                 { masterFieldErrors.phone && <p style={{ color: '#B54545', fontSize: 12, marginTop: 5 }}>{masterFieldErrors.phone}</p> }
             </div>
@@ -937,6 +1212,128 @@ function App() {
           </div>
         </div>
       )}
+      {showStaffModal && (
+        <div
+          className="modal-overlay active"
+          onClick={() => setShowStaffModal(false)}
+        >
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h2 className="modal-title">
+              {editingStaffId !== null ? 'Редактировать сотрудника' : 'Новый сотрудник'}
+            </h2>
+
+            {staffForm.role === 'ADMIN' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">ФИО *</label>
+                  <input
+                    className="form-input"
+                    placeholder="Например, Анна Иванова"
+                    value={staffForm.fullName || ''}
+                    onChange={(event) => setStaffForm({ ...staffForm, fullName: event.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Email *</label>
+                  <input
+                    className="form-input"
+                    type="email"
+                    placeholder="example@mail.ru"
+                    value={staffForm.email || ''}
+                    onChange={(event) => setStaffForm({ ...staffForm, email: event.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Телефон *</label>
+                  <input
+                    className="form-input"
+                    placeholder="+7 (999) 123-45-67"
+                    value={staffForm.phone || ''}
+                    onChange={(event) => setStaffForm({ ...staffForm, phone: formatRussianPhone(event.target.value) })}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">Роль *</label>
+              <select
+                className="form-input"
+                value={staffForm.role}
+                onChange={(event) => setStaffForm({
+                  ...staffForm,
+                  role: event.target.value as 'ADMIN' | 'MASTER',
+                  masterId: null,
+                })}
+              >
+                <option value="MASTER">Мастер</option>
+                <option value="ADMIN">Администратор</option>
+              </select>
+            </div>
+
+            {staffForm.role === 'MASTER' && (
+              <div className="form-group">
+                <label className="form-label">Карточка мастера *</label>
+                <select
+                  className="form-input"
+                  value={staffForm.masterId ?? ''}
+                  onChange={(event) => setStaffForm({
+                    ...staffForm,
+                    masterId: event.target.value ? Number(event.target.value) : null,
+                  })}
+                >
+                  <option value="">Выберите карточку мастера</option>
+                  {masters
+                    .filter((master) => !master.deleted)
+                    .map((master) => (
+                      <option key={master.id} value={master.id}>
+                        {master.fullName}
+                      </option>
+                    ))}
+                </select>
+                <p className="page-subtitle">
+                  Сначала создайте карточку мастера в разделе «Мастера», если её ещё нет.
+                </p>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">
+                Пароль {editingStaffId === null ? '*' : '(оставьте пустым, чтобы не менять)'}
+              </label>
+              <input
+                className="form-input"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Минимум 12 символов"
+                value={staffForm.password || ''}
+                onChange={(event) => setStaffForm({ ...staffForm, password: event.target.value })}
+              />
+            </div>
+
+            {staffError && (
+              <p style={{ color: '#B54545', fontSize: 13 }}>{staffError}</p>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-outline"
+                onClick={() => setShowStaffModal(false)}
+              >
+                Отмена
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveStaff}
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showClientModal && (
         <div
           className="modal-overlay active"
@@ -960,7 +1357,7 @@ function App() {
               <label className="form-label">Телефон *</label>
               <input
                 className="form-input"
-                placeholder="+7 (___) ___-__-__"
+                placeholder="+7 (999) 123-45-67"
                 value={clientForm.phone}
                 onChange={(event) => setClientForm({ ...clientForm, phone: event.target.value })}
               />
@@ -1019,3 +1416,7 @@ function App() {
 }
 
 export default App
+
+
+
+
