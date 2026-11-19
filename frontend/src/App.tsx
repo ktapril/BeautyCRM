@@ -8,7 +8,7 @@ import {
   Sparkles, BriefcaseBusiness, ChartNoAxesCombined, Settings,
   Sun, Moon, Search, Pencil, Trash2
 } from 'lucide-react'
-import { getClients, createClient, updateClient, deleteClient, uploadClientPhoto, getMasters, createMaster, updateMaster, deleteMaster, login, register, verifyEmail, logout, getCurrentUser } from './services/api'
+import { getClients, createClient, updateClient, deleteClient, uploadClientPhoto, getMasters, createMaster, updateMaster, deleteMaster, login, register, verifyEmail, logout, getCurrentUser, getAppointments } from './services/api'
 import './App.css'
 
 interface Client {
@@ -29,6 +29,16 @@ interface Master {
   email: string
   deleted: boolean
   photoUrl: string | null
+}
+interface Appointment {
+  id: number
+  clientId: number
+  masterId: number
+  serviceName: string
+  startTime: string
+  endTime: string
+  status: string
+  notes: string
 }
 const menu = [
   { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
@@ -211,6 +221,9 @@ function App() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [clientForm, setClientForm] = useState({ fullName: '', phone: '', email: '', notes: '' })
   const [masters, setMasters] = useState<Master[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [appointmentsLoading, setAppointmentsLoading] = useState(false)
+  const [appointmentsError, setAppointmentsError] = useState('')
   const [staff, setStaff] = useState<Staff[]>([])
   const [staffLoading, setStaffLoading] = useState(false)
   const [staffError, setStaffError] = useState('')
@@ -261,6 +274,19 @@ function App() {
       .finally(() => setMastersLoading(false))
   }, [currentUser])
 
+
+  useEffect(() => {
+    if (!currentUser || !['OWNER', 'ADMIN'].includes(currentUser.role)) return
+
+    setAppointmentsLoading(true)
+    setAppointmentsError('')
+
+    getAppointments()
+      .then((data) => setAppointments(data))
+      .catch(() => setAppointmentsError('Не удалось загрузить записи'))
+      .finally(() => setAppointmentsLoading(false))
+  }, [currentUser])
+
   useEffect(() => {
     if (currentUser?.role !== 'OWNER') return
 
@@ -276,6 +302,93 @@ function App() {
     return () => document.body.classList.remove('dark')
   }, [dark])
 
+  useEffect(() => {
+    if (!currentUser || !['OWNER', 'ADMIN'].includes(currentUser.role)) return
+
+    let active = true
+    let refreshing = false
+
+    const refreshData = async () => {
+      if (refreshing || document.visibilityState !== 'visible') return
+      refreshing = true
+
+      const tasks: Promise<void>[] = [
+        getClients()
+          .then((data) => {
+            if (active) {
+              setClients(data.filter((client: Client) => !client.deleted))
+              setError('')
+            }
+          })
+          .catch(() => {
+            if (active) setError('Не удалось обновить клиентов')
+          }),
+
+        getMasters()
+          .then((data) => {
+            if (active) {
+              setMasters(data.filter((master: Master) => !master.deleted))
+              setMasterError('')
+            }
+          })
+          .catch(() => {
+            if (active) setMasterError('Не удалось обновить мастеров')
+          }),
+
+        getAppointments()
+          .then((data) => {
+            if (active) {
+              setAppointments(data)
+              setAppointmentsError('')
+            }
+          })
+          .catch(() => {
+            if (active) setAppointmentsError('Не удалось обновить записи')
+          }),
+      ]
+
+      if (currentUser.role === 'OWNER') {
+        tasks.push(
+          getStaff()
+            .then((data) => {
+              if (active) {
+                setStaff(data)
+                setStaffError('')
+              }
+            })
+            .catch(() => {
+              if (active) setStaffError('Не удалось обновить сотрудников')
+            })
+        )
+      }
+
+      try {
+        await Promise.all(tasks)
+      } finally {
+        refreshing = false
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshData()
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshData()
+    }, 10000)
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', refreshData)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', refreshData)
+    }
+  }, [currentUser])
   const handleSaveClient = async () => {
     const validationErrors = validateForm(clientForm, true)
 
@@ -787,6 +900,78 @@ function App() {
               </>
             )}
 
+            {activePage === 'schedule' && (
+              <>
+                <p className="page-subtitle">
+                  Все записи косметологического центра
+                </p>
+
+                {appointmentsError && (
+                  <p style={{ color: '#B54545' }}>{appointmentsError}</p>
+                )}
+
+                {appointmentsLoading ? (
+                  <p>Загружаем записи...</p>
+                ) : appointmentsError ? null : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Клиент</th>
+                          <th>Мастер</th>
+                          <th>Услуга</th>
+                          <th>Дата и время</th>
+                          <th>Статус</th>
+                          <th>Примечание</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...appointments]
+                          .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                          .map((appointment) => {
+                            const client = clients.find(
+                              (item) => item.id === appointment.clientId
+                            )
+                            const master = masters.find(
+                              (item) => item.id === appointment.masterId
+                            )
+                            const date = appointment.startTime.replace(
+                              /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}).*$/,
+                              '$3.$2.$1, $4:$5'
+                            )
+
+                            const statusLabels: Record<string, string> = {
+                              SCHEDULED: 'Запланирована',
+                              COMPLETED: 'Завершена',
+                              CANCELED: 'Отменена',
+                            }
+
+                            return (
+                              <tr key={appointment.id}>
+                                <td>{client?.fullName || 'Клиент не найден'}</td>
+                                <td>{master?.fullName || 'Мастер не найден'}</td>
+                                <td>{appointment.serviceName}</td>
+                                <td>{date}</td>
+                                <td>{statusLabels[appointment.status] || appointment.status}</td>
+                                <td>{appointment.notes || 'Нет'}</td>
+                              </tr>
+                            )
+                          })}
+                        {appointments.length === 0 && (
+                          <tr>
+                            <td colSpan={6}>Записей пока нет</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <p className="page-subtitle" style={{ marginTop: 16 }}>
+                  Всего записей: {appointments.length}
+                </p>
+              </>
+            )}
             {activePage === 'masters' && (
               <>
                 <p className="page-subtitle">
@@ -957,7 +1142,7 @@ function App() {
                 </p>
               </>
             )}
-            {!['dashboard', 'clients', 'masters', 'staff'].includes(activePage) && (
+            {!['dashboard', 'clients', 'schedule', 'masters', 'staff'].includes(activePage) && (
               <p className="page-subtitle">
                 Раздел «{titles[activePage]}». Работа над ним ещё впереди.
               </p>

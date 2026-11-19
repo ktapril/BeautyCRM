@@ -1,6 +1,7 @@
 package ru.angeliclik.crm.model;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
 
 @Entity
@@ -11,11 +12,13 @@ public class Appointment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Long clientId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "client_id", nullable = false)
+    private Client client;
 
-    @Column(nullable = false)
-    private Long masterId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "master_id", nullable = false)
+    private Master master;
 
     @Column(nullable = false, length = 150)
     private String serviceName;
@@ -35,16 +38,29 @@ public class Appointment {
     public Appointment() {}
 
     public Long getId() { return id; }
-    public Long getClientId() { return clientId; }
-    public Long getMasterId() { return masterId; }
+
+    @JsonIgnore
+    public Client getClient() { return client; }
+
+    @JsonIgnore
+    public Master getMaster() { return master; }
+
+    public Long getClientId() {
+        return client != null ? client.getId() : null;
+    }
+
+    public Long getMasterId() {
+        return master != null ? master.getId() : null;
+    }
+
     public String getServiceName() { return serviceName; }
     public LocalDateTime getStartTime() { return startTime; }
     public LocalDateTime getEndTime() { return endTime; }
     public String getStatus() { return status; }
     public String getNotes() { return notes; }
 
-    public void setClientId(Long clientId) { this.clientId = clientId; }
-    public void setMasterId(Long masterId) { this.masterId = masterId; }
+    public void setClient(Client client) { this.client = client; }
+    public void setMaster(Master master) { this.master = master; }
     public void setServiceName(String serviceName) { this.serviceName = serviceName; }
     public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
     public void setEndTime(LocalDateTime endTime) { this.endTime = endTime; }

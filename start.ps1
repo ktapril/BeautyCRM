@@ -1,0 +1,1 @@
+﻿node .\node_modules\dotenv-cli\cli.js -e .env -- node .\node_modules\concurrently\dist\bin\index.js -k --kill-timeout 5000 -s first -n BACKEND,FRONTEND -c blue,green "mvnw.cmd spring-boot:run" "node ./frontend/node_modules/vite/bin/vite.js ./frontend"

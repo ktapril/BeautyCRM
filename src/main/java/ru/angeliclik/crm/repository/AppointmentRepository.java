@@ -7,15 +7,15 @@ import java.util.List;
 
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
 
-    List<Appointment> findByMasterIdAndStartTimeBetween(
+    List<Appointment> findByMaster_IdAndStartTimeBetween(
             Long masterId,
             LocalDateTime from,
             LocalDateTime to
     );
 
-    List<Appointment> findByClientId(Long clientId);
+    List<Appointment> findByClient_Id(Long clientId);
 
-    List<Appointment> findByMasterIdAndStartTimeLessThanAndEndTimeGreaterThanAndStatusNot(
+    List<Appointment> findByMaster_IdAndStartTimeLessThanAndEndTimeGreaterThanAndStatusNot(
             Long masterId,
             LocalDateTime endTime,
             LocalDateTime startTime,

@@ -1,8 +1,11 @@
 package ru.angeliclik.crm.service;
 
 import ru.angeliclik.crm.model.Appointment;
+import ru.angeliclik.crm.model.Client;
+import ru.angeliclik.crm.model.Master;
 import ru.angeliclik.crm.repository.AppointmentRepository;
 import ru.angeliclik.crm.repository.ClientRepository;
+import ru.angeliclik.crm.repository.MasterRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,15 +17,19 @@ public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final ClientRepository clientRepository;
+    private final MasterRepository masterRepository;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
-            ClientRepository clientRepository
+            ClientRepository clientRepository,
+            MasterRepository masterRepository
     ) {
         this.appointmentRepository = appointmentRepository;
         this.clientRepository = clientRepository;
+        this.masterRepository = masterRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<Appointment> getAll() {
         return appointmentRepository.findAll();
     }
@@ -36,9 +43,15 @@ public class AppointmentService {
             Integer durationMinutes,
             String notes
     ) {
-        if (!clientRepository.existsById(clientId)) {
-            throw new RuntimeException("Клиент не найден");
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new RuntimeException("Клиент не найден"));
+
+        if (client.isDeleted()) {
+            throw new RuntimeException("Клиент удалён");
         }
+
+        Master master = masterRepository.findByIdAndDeletedFalse(masterId)
+                .orElseThrow(() -> new RuntimeException("Мастер не найден или удалён"));
 
         if (durationMinutes == null || durationMinutes <= 0) {
             throw new RuntimeException("Некорректная длительность услуги");
@@ -52,7 +65,7 @@ public class AppointmentService {
 
         List<Appointment> conflicts =
                 appointmentRepository
-                        .findByMasterIdAndStartTimeLessThanAndEndTimeGreaterThanAndStatusNot(
+                        .findByMaster_IdAndStartTimeLessThanAndEndTimeGreaterThanAndStatusNot(
                                 masterId,
                                 endTime,
                                 startTime,
@@ -64,8 +77,8 @@ public class AppointmentService {
         }
 
         Appointment appointment = new Appointment();
-        appointment.setClientId(clientId);
-        appointment.setMasterId(masterId);
+        appointment.setClient(client);
+        appointment.setMaster(master);
         appointment.setServiceName(serviceName);
         appointment.setStartTime(startTime);
         appointment.setEndTime(endTime);
