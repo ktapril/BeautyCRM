@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getStaff, createStaff, updateStaff, setStaffEnabled } from './services/api'
-import type { Staff, StaffRequest } from './services/api'
+import type { Staff, StaffRequest, MasterAppointment } from './services/api'
 import Cropper from 'react-easy-crop'
 import type { Area, Point } from 'react-easy-crop'
 import {
@@ -8,7 +8,7 @@ import {
   Sparkles, BriefcaseBusiness, ChartNoAxesCombined, Settings,
   Sun, Moon, Search, Pencil, Trash2
 } from 'lucide-react'
-import { getClients, createClient, updateClient, deleteClient, uploadClientPhoto, getMasters, createMaster, updateMaster, deleteMaster, login, register, verifyEmail, logout, getCurrentUser, getAppointments } from './services/api'
+import { getClients, createClient, updateClient, deleteClient, uploadClientPhoto, getMasters, createMaster, updateMaster, deleteMaster, login, register, verifyEmail, logout, getCurrentUser, getAppointments, getMyAppointments } from './services/api'
 import './App.css'
 
 interface Client {
@@ -224,6 +224,9 @@ function App() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [appointmentsLoading, setAppointmentsLoading] = useState(false)
   const [appointmentsError, setAppointmentsError] = useState('')
+  const [myAppointments, setMyAppointments] = useState<MasterAppointment[]>([])
+  const [myAppointmentsLoading, setMyAppointmentsLoading] = useState(false)
+  const [myAppointmentsError, setMyAppointmentsError] = useState('')
   const [staff, setStaff] = useState<Staff[]>([])
   const [staffLoading, setStaffLoading] = useState(false)
   const [staffError, setStaffError] = useState('')
@@ -287,6 +290,17 @@ function App() {
       .finally(() => setAppointmentsLoading(false))
   }, [currentUser])
 
+  useEffect(() => {
+    if (currentUser?.role !== 'MASTER') return
+
+    setMyAppointmentsLoading(true)
+    setMyAppointmentsError('')
+
+    getMyAppointments()
+      .then((data) => setMyAppointments(data))
+      .catch(() => setMyAppointmentsError('Не удалось загрузить ваши записи'))
+      .finally(() => setMyAppointmentsLoading(false))
+  }, [currentUser])
   useEffect(() => {
     if (currentUser?.role !== 'OWNER') return
 
@@ -698,6 +712,95 @@ function App() {
     )
   }
 
+  if (currentUser.role === 'MASTER') {
+    const statusLabels: Record<string, string> = {
+      SCHEDULED: 'Запланирована',
+      COMPLETED: 'Завершена',
+      CANCELED: 'Отменена',
+    }
+
+    return (
+      <div className="auth-screen">
+        <div className="auth-card" style={{ width: 'min(1100px, 95vw)', maxWidth: 'none' }}>
+          <header className="header">
+            <div className="logo">
+              <div className="logo-icon"><Sparkles size={19} /></div>
+              <span>Angel Face</span>
+            </div>
+            <div className="header-actions">
+              <button className="icon-btn" onClick={() => setDark(!dark)}>
+                {dark ? <Sun size={16} /> : <Moon size={16} />}
+                <span>{dark ? 'Светлая тема' : 'Тёмная тема'}</span>
+              </button>
+              <button className="icon-btn" onClick={() => { logout(); setCurrentUser(null) }}>Выйти</button>
+            </div>
+          </header>
+
+          <h1>Здравствуйте, {currentUser.fullName}!</h1>
+          <p className="auth-subtitle">Ваши записи и расписание приёмов</p>
+
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', margin: '24px 0' }}>
+            <div style={{ flex: '1 1 180px', padding: '18px', border: '1px solid var(--border-color, #ddd)', borderRadius: '12px' }}>
+              <div>Всего записей</div>
+              <strong style={{ fontSize: '28px' }}>{myAppointments.length}</strong>
+            </div>
+            <div style={{ flex: '1 1 180px', padding: '18px', border: '1px solid var(--border-color, #ddd)', borderRadius: '12px' }}>
+              <div>Предстоящие</div>
+              <strong style={{ fontSize: '28px' }}>{myAppointments.filter((item) => item.status === 'SCHEDULED' && new Date(item.startTime) >= new Date()).length}</strong>
+            </div>
+            <div style={{ flex: '1 1 180px', padding: '18px', border: '1px solid var(--border-color, #ddd)', borderRadius: '12px' }}>
+              <div>Завершённые</div>
+              <strong style={{ fontSize: '28px' }}>{myAppointments.filter((item) => item.status === 'COMPLETED').length}</strong>
+            </div>
+          </div>
+
+          <h2>Мои записи</h2>
+
+          {myAppointmentsLoading && <p>Загружаем записи...</p>}
+          {myAppointmentsError && <p className="auth-error">{myAppointmentsError}</p>}
+
+          {!myAppointmentsLoading && !myAppointmentsError && (
+            <div style={{ width: '100%', overflowX: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Клиент</th>
+                    <th>Телефон</th>
+                    <th>Услуга</th>
+                    <th>Начало</th>
+                    <th>Окончание</th>
+                    <th>Статус</th>
+                    <th>Комментарий</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...myAppointments]
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                    .map((appointment) => (
+                      <tr key={appointment.id}>
+                        <td>{appointment.clientName}</td>
+                        <td>{appointment.clientPhone}</td>
+                        <td>{appointment.serviceName}</td>
+                        <td>{appointment.startTime.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}).*$/, '$3.$2.$1, $4:$5')}</td>
+                        <td>{appointment.endTime.replace(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}).*$/, '$3.$2.$1, $4:$5')}</td>
+                        <td>{statusLabels[appointment.status] || appointment.status}</td>
+                        <td>{appointment.notes || 'Нет'}</td>
+                      </tr>
+                    ))}
+                  {myAppointments.length === 0 && (
+                    <tr>
+                      <td colSpan={7}>Записей пока нет</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (!['OWNER', 'ADMIN'].includes(currentUser.role)) {
     return (
       <div className="auth-screen">
@@ -753,7 +856,9 @@ function App() {
                 <div className="stats-grid">
                   <div className="stat-card featured">
                     <div className="stat-label">Записи сегодня</div>
-                    <div className="stat-value">0</div>
+                    <div className="stat-value">
+  {mastersLoading ? '...' : masterError ? '!' : masters.length}
+</div>
                   </div>
                   <div className="stat-card sage">
                     <div className="stat-label">Клиенты</div>
@@ -763,7 +868,9 @@ function App() {
                   </div>
                   <div className="stat-card">
                     <div className="stat-label">Мастера</div>
-                    <div className="stat-value">0</div>
+                    <div className="stat-value">
+  {mastersLoading ? '...' : masterError ? '!' : masters.length}
+</div>
                   </div>
                 </div>
                 {error && <p>{error}</p>}

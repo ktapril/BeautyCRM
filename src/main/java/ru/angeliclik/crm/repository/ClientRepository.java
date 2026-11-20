@@ -8,4 +8,5 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     List<Client> findByDeletedFalse();
 
+    List<Client> findByEmailIgnoreCaseAndDeletedFalse(String email);
 }

@@ -3,11 +3,14 @@ package ru.angeliclik.crm.auth;
 import ru.angeliclik.crm.auth.dto.RegisterRequest;
 import ru.angeliclik.crm.auth.dto.LoginRequest;
 import ru.angeliclik.crm.auth.dto.AuthResponse;
+import ru.angeliclik.crm.model.Client;
+import ru.angeliclik.crm.repository.ClientRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -15,6 +18,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final EmailVerificationTokenRepository tokenRepository;
+    private final ClientRepository clientRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final JwtService jwtService;
@@ -22,12 +26,14 @@ public class AuthService {
     public AuthService(
         UserRepository userRepository,
         EmailVerificationTokenRepository tokenRepository,
+        ClientRepository clientRepository,
         PasswordEncoder passwordEncoder,
         EmailService emailService,
         JwtService jwtService
     ) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
+        this.clientRepository = clientRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.jwtService = jwtService;
@@ -72,6 +78,29 @@ public class AuthService {
 
         User user = verificationToken.getUser();
         user.setEmailVerified(true);
+
+        if (user.getRole() == Role.CLIENT && user.getClient() == null) {
+            List<Client> matchingClients =
+                clientRepository.findByEmailIgnoreCaseAndDeletedFalse(user.getEmail());
+
+            if (matchingClients.size() == 1) {
+                Client client = matchingClients.get(0);
+
+                if (!userRepository.existsByClientId(client.getId())) {
+                    user.setClient(client);
+                }
+
+            } else if (matchingClients.isEmpty()) {
+                Client client = new Client();
+                client.setFullName(user.getFullName());
+                client.setEmail(user.getEmail());
+                client.setPhone(user.getPhone());
+
+                clientRepository.save(client);
+                user.setClient(client);
+            }
+        }
+
         userRepository.save(user);
         tokenRepository.delete(verificationToken);
     }

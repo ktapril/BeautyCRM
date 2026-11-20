@@ -213,3 +213,19 @@ export async function setStaffEnabled(id: number, enabled: boolean): Promise<Sta
   )
   return response.json()
 }
+
+export interface MasterAppointment {
+  id: number
+  clientName: string
+  clientPhone: string
+  serviceName: string
+  startTime: string
+  endTime: string
+  status: string
+  notes: string | null
+}
+
+export async function getMyAppointments(): Promise<MasterAppointment[]> {
+  const response = await apiFetch(`${API_URL}/appointments/my`)
+  return response.json()
+}

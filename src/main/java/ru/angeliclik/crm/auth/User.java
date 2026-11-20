@@ -1,6 +1,7 @@
 package ru.angeliclik.crm.auth;
 
 import ru.angeliclik.crm.model.Master;
+import ru.angeliclik.crm.model.Client;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -38,6 +39,10 @@ public class User {
     @JoinColumn(name = "master_id", unique = true)
     private Master master;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "client_id", unique = true)
+    private Client client;
+
     @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -52,6 +57,7 @@ public class User {
     public boolean isEmailVerified() { return emailVerified; }
     public boolean isEnabled() { return enabled; }
     public Master getMaster() { return master; }
+    public Client getClient() { return client; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 
     public void setFullName(String fullName) { this.fullName = fullName; }
@@ -62,4 +68,5 @@ public class User {
     public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public void setMaster(Master master) { this.master = master; }
+    public void setClient(Client client) { this.client = client; }
 }

@@ -7,6 +7,8 @@ import java.util.List;
 
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
 
+    List<Appointment> findByMaster_IdOrderByStartTimeAsc(Long masterId);
+
     List<Appointment> findByMaster_IdAndStartTimeBetween(
             Long masterId,
             LocalDateTime from,
